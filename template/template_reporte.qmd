@@ -1,0 +1,186 @@
+---
+title: "Informe de Resultados IHEA" 
+subtitle: "Análisis de Intereses y Expectativas Académicas" 
+author: "Centro de Evaluación de la Formación Académica (CEFA)" 
+date: today 
+date-format: "YYYY" 
+format: 
+    revealjs: 
+    theme: [default, report.scss] 
+    #logo: "https://www.google.com/search?q=https://www.uahurtado.cl/wp-content/themes/uah/img/logo-uah.png" 
+    #transition: fade slide-number: true width: 1600 height: 900 
+    footer: "UAH - Dirección de Docencia y Pedagogía" 
+    params: carrera_sel: "Derecho"
+---
+
+```{r}
+
+```
+#| label: setup
+#| include: false
+
+library(tidyverse)
+library(gt)
+library(patchwork)
+
+# Configuración de colores corporativos según tu SCSS
+brand_brand <- "#0a6d7c"
+brand_dark  <- "#0a4e58"
+brand_muted <- "#4b5661"
+
+# Carga de datos
+if(file.exists("data_reproduction.rds")){
+  ihea_full <- readRDS("data_reproduction.rds")
+} else {
+  # Fallback si está en el ambiente global
+  ihea_full <- get0("ihea_final", ifnotfound = data.frame()) 
+}
+
+# Filtrado por parámetro
+df_carrera <- ihea_full %>% 
+  filter(carrera == params$carrera_sel)
+
+# Cálculo de N
+n_carrera <- nrow(df_carrera)
+
+
+Carrera: r params$carrera_sel {canvas-title="true"}
+
+::: {.analysis-box}
+
+Ficha Técnica del Reporte
+
+::: {.stat-row}
+Unidad de análisis: Estudiantes de primer año cohorte 2026.
+:::
+::: {.stat-row}
+Muestra procesada: r n_carrera estudiantes respondieron el instrumento.
+:::
+::: {.stat-row}
+Estado de datos: Limpieza y validación completada (CEFAU Data Lab).
+:::
+:::
+
+::: {.competencia-slide}
+::: {.competencia-text}
+Resumen de Caracterización
+:::
+:::
+
+Distribución de Modalidad e Interés Inicial
+
+#| echo: false
+#| fig-align: center
+
+if(n_carrera > 0) {
+  p1 <- df_carrera %>% 
+    count(modalidad) %>% 
+    ggplot(aes(x = reorder(modalidad, n), y = n, fill = modalidad)) +
+    geom_col(fill = brand_brand) +
+    coord_flip() +
+    theme_minimal(base_family = "Inconsolata") +
+    labs(title = "Participación por Modalidad", x = NULL, y = "Cantidad")
+
+  p2 <- df_carrera %>% 
+    count(p_1) %>% 
+    ggplot(aes(x = p_1, y = n)) +
+    geom_col(fill = brand_dark) +
+    theme_minimal(base_family = "Inconsolata") +
+    labs(title = "Preferencia Académica (P1)", x = "Opción", y = "Frecuencia")
+
+  p1 + p2
+}
+
+
+::: {.competencia-slide}
+::: {.competencia-text}
+Resultados por Dimensión
+:::
+:::
+
+Detalle de Respuestas (P2 a P5)
+
+#| echo: false
+
+if(n_carrera > 0) {
+  df_carrera %>% 
+    select(starts_with("p_") & where(is.character)) %>% 
+    select(1:4) %>% 
+    pivot_longer(everything(), names_to = "Pregunta", values_to = "Respuesta") %>% 
+    filter(!is.na(Respuesta)) %>% 
+    group_by(Pregunta, Respuesta) %>% 
+    summarise(n = n(), .groups = "drop") %>% 
+    group_by(Pregunta) %>% 
+    mutate(pct = n / sum(n)) %>% 
+    slice_max(n, n = 1) %>% 
+    gt() %>% 
+    tab_header(
+      title = "Respuesta más frecuente por ítem",
+      subtitle = paste("Carrera:", params$carrera_sel)
+    ) %>% 
+    cols_label(
+      Pregunta = "Código",
+      Respuesta = "Tendencia Principal",
+      n = "Frecuencia",
+      pct = "%"
+    ) %>% 
+    fmt_percent(columns = pct, decimals = 1) %>% 
+    tab_options(
+      table.font.size = px(18),
+      heading.background.color = brand_brand
+    )
+}
+
+
+Análisis de Preparación Percibida
+
+::: {.columns}
+
+::: {.column width="60%"}
+
+#| echo: false
+if(n_carrera > 0) {
+  df_carrera %>% 
+    filter(!is.na(p_15)) %>% 
+    count(p_15) %>% 
+    ggplot(aes(x = n, y = reorder(p_15, n))) +
+    geom_segment(aes(x = 0, xend = n, y = reorder(p_15, n), yend = reorder(p_15, n)), color = brand_muted) +
+    geom_point(size = 8, color = brand_brand) +
+    theme_minimal(base_family = "Inconsolata") +
+    labs(title = "¿Qué tan preparado se siente?", x = "N", y = NULL)
+}
+
+
+:::
+
+::: {.column width="40%"}
+::: {.callout-note}
+
+Nota Metodológica
+
+Este gráfico muestra la percepción subjetiva de los estudiantes sobre su nivel de preparación para el ingreso a la educación superior en la UAH.
+:::
+
+::: {.analysis-box}
+
+Hallazgo Clave
+
+La categoría dominante para r params$carrera_sel es indicativa de las necesidades de apoyo diagnóstico inicial.
+:::
+:::
+
+:::
+
+Conclusiones y Próximos Pasos
+
+Revisión Curricular: Utilizar estos perfiles para ajustar la inducción de la carrera.
+
+Seguimiento: Cruce de estos datos con la retención de primer semestre.
+
+Acciones de Nivelación: Priorizar estudiantes en categorías de "Poco Preparado".
+
+::: {.competencia-slide}
+::: {.competencia-text}
+CEFA UAH 2026
+:::
+:::

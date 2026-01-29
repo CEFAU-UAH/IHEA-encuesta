@@ -1,0 +1,137 @@
+---
+title: "Encuesta Psicoeducativa Inicial 2025"
+subtitle: "Resultados por Carrera: `r params$carrera_nombre`"
+author: "CEFAU - Universidad Alberto Hurtado"
+date: "`r Sys.Date()`"
+format: 
+  revealjs:
+    theme: [default, estilo.css]
+    logo: logo-uah-open.png
+    footer: "Dirección de Docencia - CEFAU UAH"
+    slide-number: true
+    transition: fade
+    width: 1280
+    height: 720
+    embed-resources: true
+params:
+  carrera_nombre: "ADMINISTRACIÓN PÚBLICA"
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(scales)
+library(knitr)
+library(janitor)
+
+# CARGA DE DATOS: Buscamos el archivo RDS generado por el script maestro
+# Intentamos cargarlo desde la ruta local del renderizado
+if (file.exists("data_reproduction.rds")) {
+  ihea_final <- readRDS("data_reproduction.rds")
+} else {
+  # Si falla (depende de la versión de Quarto), buscamos en la carpeta superior
+  ihea_final <- readRDS("../data_reproduction.rds")
+}
+
+# Filtrado para la carrera del reporte
+data_carrera <- ihea_final %>% 
+  filter(carrera == params$carrera_nombre)
+
+n_total <- nrow(data_carrera)
+
+```
+
+## Introducción {background-color="#ffffff"}
+
+::: {.columns}
+::: {.column width="65%"}
+El objetivo de este reporte es dar cuenta del resultado de la **Encuesta Psicoeducativa** aplicada por el Centro de Evaluación para la Formación Académica Universitaria, **CEFAU**.
+
+Estos datos permiten obtener una primera mirada global del estudiantado que ingresa a la universidad, aportando información útil para organizar actividades de apoyo en la transición a la vida universitaria.
+
+La encuesta es de carácter confidencial y se entregan datos agregados por carrera.
+:::
+
+::: {.column width="35%"}
+::: {.comentario-final}
+
+### Matrícula Evaluada
+
+En esta unidad académica, un total de **`r n_total`** estudiantes completaron el cuestionario.
+:::
+:::
+:::
+
+## I. Vías de Ingreso y Participación
+
+A continuación se detalla la distribución de los encuestados según el tipo de ingreso capturado (Admisión Directa, Centralizada, PACE).
+
+```{r, echo=FALSE}
+data_carrera %>%
+  count(modalidad, name = "N° Estudiantes") %>%
+  mutate(Porcentaje = percent(`N° Estudiantes` / sum(`N° Estudiantes`), accuracy = 0.1)) %>%
+  adorn_totals("row") %>%
+  kable(align = "lrc")
+
+```
+
+## II. Percepción de desafío del primer año
+
+¿Cuán desafiante crees que será para ti este primer año de estudios en la universidad? 
+
+```{r, echo=FALSE, fig.align='center'}
+# Basado en la escala de la página 3 del PDF del cuestionario
+data_carrera %>%
+  count(p_1) %>%
+  mutate(pct = n/sum(n)) %>%
+  ggplot(aes(x = p_1, y = pct)) +
+  geom_col(fill = "#E87722") + # Naranja UAH
+  geom_text(aes(label = percent(pct, accuracy = 1)), vjust = -0.5, size = 5) +
+  scale_y_continuous(labels = percent, limits = c(0, 1)) +
+  theme_minimal(base_size = 16) +
+  labs(x = NULL, y = "Porcentaje de respuestas")
+
+```
+
+## III. Autopercepción de Preparación
+
+¿Qué tan preparado/a te sientes para enfrentar desafíos académicos (Lectura, Escritura, Oralidad)? 
+
+```{r, echo=FALSE, fig.align='center'}
+# Gráfico de barras horizontales para facilitar la lectura de escalas largas
+data_carrera %>%
+  filter(!is.na(p_15)) %>%
+  count(p_15) %>% 
+  mutate(pct = n/sum(n)) %>%
+  ggplot(aes(x = reorder(p_15, pct), y = pct)) +
+  geom_col(fill = "#004B87") + # Azul UAH
+  coord_flip() +
+  scale_y_continuous(labels = percent) +
+  geom_text(aes(label = percent(pct, accuracy = 0.1)), hjust = -0.1, size = 5) +
+  theme_minimal(base_size = 14) +
+  labs(x = NULL, y = "Porcentaje")
+
+```
+
+## Apoyos y Trayectoria Estudiantil {.smaller}
+
+Para favorecer la permanencia en la educación superior, la UAH dispone de mecanismos de apoyo:
+
+1. 
+**Mentorías Académicas**: Estrategias en Matemática y Alfabetización Académica.
+
+
+2. 
+**Consejerías Psicoeducativas**: Organización del aprendizaje, gestión del tiempo y hábitos.
+
+
+3. 
+**Tutorías entre pares**: Acompañamiento por estudiantes de la misma carrera.
+
+
+
+::: {.comentario-final}
+Para profundizar en estos resultados, contactar al correo: **cefau@uahurtado.cl**.
+:::
+
+```
+

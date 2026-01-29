@@ -1,0 +1,82 @@
+/*-- scss:defaults --*/
+$brand-brand:        #0a6d7c !default;
+$brand-brand-dark:   #0a4e58 !default;
+$brand-text:         #11222b !default;
+$brand-muted:        #4b5661 !default;
+$font-family-sans-serif: "Inconsolata", monospace !default;
+$font-size-root: 16px;
+
+/*-- scss:rules --*/
+
+/* =========================================
+   1. Títulos y Portada
+   ========================================= */
+.reveal h1 { font-size: 1.6em !important; color: $brand-brand-dark; margin-bottom: 0.5em; }
+
+.reveal h2 { 
+  font-size: 1em !important; 
+  color: $brand-brand-dark; 
+  border-bottom: 1px solid #ddd; 
+  padding-bottom: 5px; 
+  margin-bottom: 15px; 
+  line-height: 1.2;
+}
+
+.reveal h3 { font-size: 1.1em !important; color: $brand-muted; margin-top: 0; }
+
+/* Portada */
+#title-slide { text-align: left !important; padding-top: 80px !important; }
+#title-slide h1 { font-size: 2.5em !important; font-weight: 900; color: $brand-brand-dark; margin-top: 0 !important; margin-bottom: 10px; line-height: 1.0; }
+#title-slide p.subtitle { font-size: 1.6em !important; color: $brand-muted; margin-top: 0; margin-bottom: 60px; }
+#title-slide p.author { margin-top: 40px; font-size: 1.2em; border-top: 4px solid $brand-brand; display: inline-block; padding-top: 10px; color: $brand-text; }
+
+
+/* =========================================
+   2. SLIDES DE COMPETENCIA (SEPARADORES)
+   ========================================= */
+/* Contenedor Flex para centrar verticalmente en la slide */
+.competencia-slide {
+  display: flex !important;
+  flex-direction: column;
+  justify-content: center; /* Centrado Vertical */
+  height: 80vh;            /* Ocupa casi toda la altura */
+  text-align: left;        /* Alineación Izquierda */
+  padding-left: 50px;      /* Margen izquierdo para que no se pegue al borde */
+}
+
+/* Texto grande y verde */
+.competencia-text {
+  font-size: 2em;       /* Letra MUY GRANDE */
+  font-weight: 800;       /* Negrita fuerte */
+  color: $brand-brand-dark; /* Verde oscuro corporativo */
+  line-height: 1.2;
+  border-left: 10px solid $brand-brand; /* Línea decorativa gruesa */
+  padding-left: 30px;
+}
+
+
+/* =========================================
+   3. Gráficos y Tablas
+   ========================================= */
+.cell-output-display { display: block; width: 100%; margin: 0 auto; }
+.cell-output-display img, .cell-output-display svg { width: 100%; height: auto; max-height: 550px; object-fit: contain; }
+.dataTables_wrapper { font-size: 0.65em; }
+table.dataTable thead th { background-color: $brand-brand; color: white !important; }
+
+/* =========================================
+   4. Layout y Utilidades
+   ========================================= */
+.columns { display: flex; gap: 30px; align-items: flex-start; }
+/* Reducir también el título del bloque */
+.analysis-box h4 {
+  font-size: 1.0em !important; /* Añade esta regla si es necesario */
+  margin-top: 0;
+  padding-bottom: 5px;
+}
+.stat-row {
+  font-size: 0.9em !important; /* REDUCIR AQUI (antes era 1.1em) */
+  margin-bottom: 8px;
+  color: $brand-brand-dark;
+}
+.callout-note { font-size: 0.9em !important; margin-top: 15px; }
+body.hide-footer-logo .slide-logo { display: none !important; visibility: hidden !important; }
