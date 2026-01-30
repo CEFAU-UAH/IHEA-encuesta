@@ -1,184 +1,293 @@
 ---
-title: "Informe de Resultados IHEA" 
-subtitle: "Análisis de Intereses y Expectativas Académicas" 
-author: "Centro de Evaluación de la Formación Académica (CEFA)" 
-date: today 
-date-format: "YYYY" 
-format: 
-    revealjs: 
-    theme: [default, report.scss] 
-    #logo: "https://www.google.com/search?q=https://www.uahurtado.cl/wp-content/themes/uah/img/logo-uah.png" 
-    #transition: fade slide-number: true width: 1600 height: 900 
-    footer: "UAH - Dirección de Docencia y Pedagogía" 
-    params: carrera_sel: "Derecho"
+title: "Informe Integral IHEA 2026"
+subtitle: "Perfil de Ingreso, Hábitos y Expectativas Académicas"
+author: "CEFAU UAH - Data Lab"
+format:
+  revealjs:
+    theme: [default, report.scss]
+    logo: logo-uah-open.png
+    footer: "Dirección de Docencia y Pedagogía - Universidad Alberto Hurtado"
+    self-contained: true
+    width: 1600
+    height: 900
+    center: true
+    transition: slide
+params:
+  carrera_sel: "Derecho"
 ---
 
-```{r}
-#| label: setup
-#| include: false
-
+```{r setup, include=FALSE}
 library(tidyverse)
 library(gt)
 library(patchwork)
+library(here)
+library(scales)
 
-# Configuración de colores corporativos según tu SCSS
-brand_brand <- "#0a6d7c"
-brand_dark  <- "#0a4e58"
-brand_muted <- "#4b5661"
+# --- IDENTIDAD VISUAL CEFAU ---
+brand_teal <- "#0a6d7c"
+brand_dark <- "#0a4e58"
 
-# Carga de datos
-if(file.exists("data_reproduction.rds")){
-  ihea_full <- readRDS("data_reproduction.rds")
-} else {
-  # Fallback si está en el ambiente global
-  ihea_full <- get0("ihea_final", ifnotfound = data.frame()) 
+# --- CARGA DE DATOS ---
+ihea_full <- readRDS(here("data_reproduction.rds"))
+df_carrera <- ihea_full %>% filter(carrera == params$carrera_sel)
+n_est <- nrow(df_carrera)
+
+# --- DICCIONARIO DE ETIQUETAS COMPLETO ---
+mapear_labels <- function(variable, vector_datos) {
+  labels_map <- list(
+    p_1 = c(a="Estudios previos (Incompletos)", b="Técnico Profesional", c="Universitario", d="Sin estudios previos"),
+    p_2 = c(a="Satisfactoria", b="Regular", c="Insatisfactoria", d="Sin experiencia previa"),
+    p_3 = c(a="Sí, trabaja", b="No trabaja"),
+    p_4 = c(a="Formal (C/Contrato)", b="Formal (S/Cotiza)", c="Informal", e="Independiente", f="Autoempleo"),
+    p_5 = c(a="Sostén principal", b="Aporte hogar", c="Gastos estudio", d="Gastos personales", e="No trabajará"),
+    p_6 = c(a="Sí, cuida personas", b="No"),
+    p_7 = c(a="Niño/a", b="Adolescente", c="Adulto Autovalente", d="Adulto Dependiente", e="No aplica"),
+    p_8 = c(a="< 2h", b="2-4h", c="4-6h", d="> 6h"),
+    p_10 = c(a="Escritorio", b="Notebook", c="Tablet", d="Celular"),
+    p_11 = c(a="Siempre", b="Mayor parte", c="Mitad tiempo", d="Ocasionalmente", e="Sin espacio"),
+    p_13 = c(a="Muy comprometido/a", b="Comprometido/a", c="Medianamente", d="Poco"),
+    p_14 = c(a="Muy claro", b="Claro", c="Medianamente", d="Poco", e="Nada claro"),
+    p_18 = c(a="Muy probable", b="Medianamente", c="Poco probable", d="Muy poco")
+  )
+  if (variable %in% names(labels_map)) return(recode(vector_datos, !!!labels_map[[variable]]))
+  return(vector_datos)
 }
 
-# Filtrado por parámetro
-df_carrera <- ihea_full %>% 
-  filter(carrera == params$carrera_sel)
+# --- FUNCIÓN DE RENDERIZADO MAXIMIZADO ---
+render_viz <- function(data, var_name, title_text, plot_type = "bar") {
+  if(nrow(data) == 0) return(NULL)
+  df_p <- data %>% select(all_of(var_name)) %>% rename(valor = 1) %>% 
+    filter(!is.na(valor)) %>% mutate(valor = mapear_labels(var_name, valor))
+  
+  # Manejo de múltiples respuestas (P7, P17, P19)
+  if(var_name %in% c("p_7", "p_17", "p_19")) {
+    df_p <- df_p %>% separate_rows(valor, sep = ",|;") %>% mutate(valor = str_trim(valor))
+  }
 
-# Cálculo de N
-n_carrera <- nrow(df_carrera)
+  summary <- df_p %>% count(valor) %>% mutate(pct = n/sum(n))
 
-
-Carrera: r params$carrera_sel {canvas-title="true"}
-
-::: {.analysis-box}
-
-Ficha Técnica del Reporte
-
-::: {.stat-row}
-Unidad de análisis: Estudiantes de primer año cohorte 2026.
-:::
-::: {.stat-row}
-Muestra procesada: r n_carrera estudiantes respondieron el instrumento.
-:::
-::: {.stat-row}
-Estado de datos: Limpieza y validación completada (CEFAU Data Lab).
-:::
-:::
-
-::: {.competencia-slide}
-::: {.competencia-text}
-Resumen de Caracterización
-:::
-:::
-
-Distribución de Modalidad e Interés Inicial
-
-#| echo: false
-#| fig-align: center
-
-if(n_carrera > 0) {
-  p1 <- df_carrera %>% 
-    count(modalidad) %>% 
-    ggplot(aes(x = reorder(modalidad, n), y = n, fill = modalidad)) +
-    geom_col(fill = brand_brand) +
-    coord_flip() +
-    theme_minimal(base_family = "Inconsolata") +
-    labs(title = "Participación por Modalidad", x = NULL, y = "Cantidad")
-
-  p2 <- df_carrera %>% 
-    count(p_1) %>% 
-    ggplot(aes(x = p_1, y = n)) +
-    geom_col(fill = brand_dark) +
-    theme_minimal(base_family = "Inconsolata") +
-    labs(title = "Preferencia Académica (P1)", x = "Opción", y = "Frecuencia")
-
-  p1 + p2
+  if(plot_type == "bar") {
+    ggplot(summary, aes(x = pct, y = reorder(valor, pct))) +
+      geom_col(fill = brand_teal) +
+      geom_text(aes(label = percent(pct, 0.1)), hjust = -0.1, size = 10, fontface = "bold", color = brand_dark) +
+      scale_x_continuous(labels = percent, limits = c(0, 1.3)) +
+      labs(title = title_text, x = NULL, y = NULL) +
+      theme_minimal(base_size = 28) +
+      theme(plot.title = element_text(face="bold", color=brand_dark, size = 32),
+            panel.grid.major.y = element_blank(), axis.text.y = element_text(face = "bold"))
+  } else {
+    ggplot(summary, aes(x = "", y = pct, fill = valor)) +
+      geom_bar(stat = "identity", width = 1, color = "white") +
+      coord_polar("y") +
+      scale_fill_brewer(palette = "GnBu") +
+      geom_text(aes(label = percent(pct, 1)), position = position_stack(vjust = 0.5), size = 10, fontface = "bold") +
+      labs(title = title_text, fill = NULL) +
+      theme_void(base_size = 28) +
+      theme(legend.position = "bottom", plot.title = element_text(hjust=0.5, face="bold", color=brand_dark, size = 32),
+            legend.text = element_text(size = 18))
+  }
 }
 
+```
 
-::: {.competencia-slide}
-::: {.competencia-text}
-Resultados por Dimensión
-:::
-:::
-
-Detalle de Respuestas (P2 a P5)
-
-#| echo: false
-
-if(n_carrera > 0) {
-  df_carrera %>% 
-    select(starts_with("p_") & where(is.character)) %>% 
-    select(1:4) %>% 
-    pivot_longer(everything(), names_to = "Pregunta", values_to = "Respuesta") %>% 
-    filter(!is.na(Respuesta)) %>% 
-    group_by(Pregunta, Respuesta) %>% 
-    summarise(n = n(), .groups = "drop") %>% 
-    group_by(Pregunta) %>% 
-    mutate(pct = n / sum(n)) %>% 
-    slice_max(n, n = 1) %>% 
-    gt() %>% 
-    tab_header(
-      title = "Respuesta más frecuente por ítem",
-      subtitle = paste("Carrera:", params$carrera_sel)
-    ) %>% 
-    cols_label(
-      Pregunta = "Código",
-      Respuesta = "Tendencia Principal",
-      n = "Frecuencia",
-      pct = "%"
-    ) %>% 
-    fmt_percent(columns = pct, decimals = 1) %>% 
-    tab_options(
-      table.font.size = px(18),
-      heading.background.color = brand_brand
-    )
-}
-
-
-Análisis de Preparación Percibida
+## Carrera: `r params$carrera_sel` {canvas-title="true"}
 
 ::: {.columns}
-
 ::: {.column width="60%"}
 
-#| echo: false
-if(n_carrera > 0) {
-  df_carrera %>% 
-    filter(!is.na(p_15)) %>% 
-    count(p_15) %>% 
-    ggplot(aes(x = n, y = reorder(p_15, n))) +
-    geom_segment(aes(x = 0, xend = n, y = reorder(p_15, n), yend = reorder(p_15, n)), color = brand_muted) +
-    geom_point(size = 8, color = brand_brand) +
-    theme_minimal(base_family = "Inconsolata") +
-    labs(title = "¿Qué tan preparado se siente?", x = "N", y = NULL)
-}
+### Resumen de Participación
 
-
+* **Carrera:** `r params$carrera_sel`
+* **N° Respuestas:** `r n_est` estudiantes procesados
+* **Preguntas Omitidas Promedio:** `r round(mean(df_carrera$preguntas_omitidas, na.rm=T), 1)`
 :::
-
 ::: {.column width="40%"}
 ::: {.callout-note}
 
-Nota Metodológica
+## Ficha Técnica
 
-Este gráfico muestra la percepción subjetiva de los estudiantes sobre su nivel de preparación para el ingreso a la educación superior en la UAH.
+Informe automatizado por CEFAU Data Lab para el análisis de perfil de ingreso cohorte 2026.
 :::
-
-::: {.analysis-box}
-
-Hallazgo Clave
-
-La categoría dominante para r params$carrera_sel es indicativa de las necesidades de apoyo diagnóstico inicial.
 :::
 :::
 
+## 1. Trayectoria y Experiencia Superior (P1 - P2)
+
+::: {.columns}
+::: {.column width="50%"}
+
+```{r, echo=FALSE, fig.width=16, fig.height=12}
+render_viz(df_carrera, "p_1", "P1: Estudios Previos", "bar")
+
+```
+
+:::
+::: {.column width="50%"}
+
+```{r, echo=FALSE, fig.width=16, fig.height=12}
+render_viz(df_carrera, "p_2", "P2: Experiencia Anterior", "pie")
+
+```
+
+:::
 :::
 
-Conclusiones y Próximos Pasos
+## 2. Situación Laboral y Formalidad (P3 - P4)
 
-Revisión Curricular: Utilizar estos perfiles para ajustar la inducción de la carrera.
+::: {.columns}
+::: {.column width="50%"}
 
-Seguimiento: Cruce de estos datos con la retención de primer semestre.
+```{r, echo=FALSE, fig.width=16, fig.height=12}
+render_viz(df_carrera, "p_3", "P3: ¿Trabaja actualmente?", "bar")
 
-Acciones de Nivelación: Priorizar estudiantes en categorías de "Poco Preparado".
+```
 
-::: {.competencia-slide}
-::: {.competencia-text}
-CEFA UAH 2026
 :::
+::: {.column width="50%"}
+
+```{r, echo=FALSE, fig.width=16, fig.height=12}
+render_viz(df_carrera, "p_4", "P4: Nivel de Formalidad", "pie")
+
+```
+
+:::
+:::
+
+## 3. Proyecciones Laborales y Cuidados (P5 - P6)
+
+::: {.columns}
+::: {.column width="50%"}
+
+```{r, echo=FALSE, fig.width=16, fig.height=12}
+render_viz(df_carrera, "p_5", "P5: Plan de trabajo 2026", "bar")
+
+```
+
+:::
+::: {.column width="50%"}
+
+```{r, echo=FALSE, fig.width=16, fig.height=12}
+render_viz(df_carrera, "p_6", "P6: Responsabilidades Cuidado", "pie")
+
+```
+
+:::
+:::
+
+## 4. Perfil de Cuidados y Tiempo (P7 - P8)
+
+::: {.columns}
+::: {.column width="50%"}
+
+```{r, echo=FALSE, fig.width=16, fig.height=12}
+render_viz(df_carrera, "p_7", "P7: Sujetos de Cuidado (Múltiple)", "bar")
+
+```
+
+:::
+::: {.column width="50%"}
+
+```{r, echo=FALSE, fig.width=16, fig.height=12}
+render_viz(df_carrera, "p_8", "P8: Horas diarias de cuidado", "pie")
+
+```
+
+:::
+:::
+
+## 5. Hábitos y Entorno de Estudio (P9 - P11)
+
+::: {.columns}
+::: {.column width="50%"}
+
+```{r, echo=FALSE, fig.width=16, fig.height=12}
+render_viz(df_carrera, "p_10", "P10: Dispositivo principal", "bar")
+
+```
+
+:::
+::: {.column width="50%"}
+
+```{r, echo=FALSE, fig.width=16, fig.height=12}
+render_viz(df_carrera, "p_11", "P11: Espacio de estudio", "pie")
+
+```
+
+:::
+:::
+
+## 6. Identidad y Compromiso (P12 - P14)
+
+::: {.columns}
+::: {.column width="50%"}
+
+```{r, echo=FALSE, fig.width=16, fig.height=12}
+# P12 y P14 son variables de escala de identificación y claridad
+render_viz(df_carrera, "p_12", "P12: Identificación Carrera", "bar")
+
+```
+
+:::
+::: {.column width="50%"}
+
+```{r, echo=FALSE, fig.width=16, fig.height=12}
+render_viz(df_carrera, "p_13", "P13: Compromiso Egreso", "pie")
+
+```
+
+:::
+:::
+
+## 7. Preparación y Misión UAH (P15 - P16)
+
+::: {.columns}
+::: {.column width="50%"}
+
+```{r, echo=FALSE, fig.width=16, fig.height=12}
+render_viz(df_carrera, "p_15", "P15: Preparación Percibida", "bar")
+
+```
+
+:::
+::: {.column width="50%"}
+
+```{r, echo=FALSE, fig.width=16, fig.height=12}
+render_viz(df_carrera, "p_16", "P16: Alineación Misión UAH", "pie")
+
+```
+
+:::
+:::
+
+## 8. Apoyos y Proyección (P17 - P18)
+
+::: {.columns}
+::: {.column width="50%"}
+
+```{r, echo=FALSE, fig.width=16, fig.height=12}
+render_viz(df_carrera, "p_17", "P17: Fuentes de Apoyo", "bar")
+
+```
+
+:::
+::: {.column width="50%"}
+
+```{r, echo=FALSE, fig.width=16, fig.height=12}
+render_viz(df_carrera, "p_18", "P18: Probabilidad Permanencia", "pie")
+
+```
+
+:::
+:::
+
+## 9. Áreas de Interés Formativo (P19)
+
+```{r, echo=FALSE, fig.width=24, fig.height=12, fig.align='center'}
+# La P19 contiene las temáticas de interés (múltiple)
+render_viz(df_carrera, "p_19", "P19: Habilidades y temáticas de mayor interés", "bar")
+
+```
+
+::: {.aside}
+Dirección de Docencia y Pedagogía | CEFAU UAH 2026.
 :::
