@@ -1,0 +1,641 @@
+---
+title: "IHEA 2026"
+subtitle: |
+  Reporte General de Intereses, Hábitos y Expectativas Académicas <br> **Todas las Carreras**
+author: ""
+format:
+  revealjs:
+    theme: [default, report.scss]
+    logo: logo-uah-open.png
+    footer: "Dirección de Docencia y Pedagogía | CEFAU - Universidad Alberto Hurtado"
+    self-contained: true
+    width: 1600
+    height: 900
+    center: true
+    transition: slide
+---
+
+```{r setup, include=FALSE}
+library(tidyverse)
+library(scales)
+library(here)
+library(patchwork)
+library(stringr)
+
+# --- IDENTIDAD VISUAL CEFAU ---
+brand_teal <- "#0a6d7c"
+brand_dark <- "#0a4e58"
+
+# --- CARGA DE DATOS (ROBUSTO: soporta df o lista) ---
+dat <- readRDS(here("data_reproduction.rds"))
+
+if (is.data.frame(dat)) {
+  # Formato antiguo: el RDS es directamente la base de respuestas
+  ihea_full <- dat
+  # Cobertura viene desde archivo aparte
+  cobertura_tbl <- readRDS(here("outputs", "cobertura_por_carrera.rds"))
+} else if (is.list(dat) && ("ihea" %in% names(dat))) {
+  # Formato nuevo: lista con ihea + cobertura
+  ihea_full <- dat$ihea
+  cobertura_tbl <- dat$cobertura
+} else {
+  stop("data_reproduction.rds tiene un formato inesperado. Debe ser data.frame o lista con $ihea.")
+}
+
+# IMPORTANTE: No filtrar por carrera - usar todos los datos
+df <- ihea_full %>%
+  filter(!is.na(carrera))
+
+n_est <- nrow(df)
+n_carreras <- n_distinct(df$carrera)
+
+# Cobertura general
+cobertura_total <- cobertura_tbl %>%
+  summarise(
+    n_matriculados = sum(n_matriculados, na.rm = TRUE),
+    n_respondieron = sum(n_respondieron, na.rm = TRUE)
+  ) %>%
+  mutate(cobertura = n_respondieron / n_matriculados)
+
+# --- NIVELES LIKERT (ORDEN LÓGICO SEGÚN DATASET) ---
+lev_p12 <- c("No me identifica nada", "Me identifica poco", "Me identifica medianamente", "Me identifica", "Me identifica mucho")
+
+# p15 viene con duplicados (variantes de mayúsculas / acentos). Normalizamos a 5 niveles.
+fix_p15 <- function(x) {
+  case_when(
+    str_detect(x, "(?i)nada") ~ "Nada preparado/a",
+    str_detect(x, "(?i)poco") ~ "Poco preparado/a",
+    str_detect(x, "(?i)menos") ~ "Más o menos preparado/a",
+    str_detect(x, "(?i)^preparado") ~ "Preparado/a",
+    str_detect(x, "(?i)muy") ~ "Muy preparado/a",
+    TRUE ~ x
+  )
+}
+lev_p15_clean <- c("Nada preparado/a", "Poco preparado/a", "Más o menos preparado/a", "Preparado/a", "Muy preparado/a")
+
+lev_p16 <- c("Muy en desacuerdo", "En desacuerdo", "Ni de acuerdo ni en desacuerdo", "De acuerdo", "Muy de acuerdo")
+lev_p18 <- c("Muy poco probable", "Poco probable", "Medianamente probable", "Probable")
+
+# --- DICCIONARIO DE ETIQUETAS (OPCIÓN ÚNICA) ---
+dict_labels <- list(
+  p_1 = c(a="Estudios previos incompletos", b="Carrera Técnica completa", c="Carrera Universitaria completa", d="Sin estudios previos"),
+  p_2 = c(a="Satisfactoria", b="Regular", c="Insatisfactoria", d="Sin experiencia previa"),
+  p_3 = c(a="Sí, trabaja", b="No trabaja"),
+  p_4 = c(a="Formal (Contrato y Cotiza)", b="Formal (Sin cotiza)", c="Informal", e="Independiente", f="Autoempleo"),
+  p_5 = c(a="Sostén principal", b="Aporte ingresos", c="Gastos estudio", d="Gastos personales", e="No trabajará"),
+  p_6 = c(a="Sí, cuida personas", b="No"),
+  p_7 = c(a="Niño/a", b="Adolescente", c="Adulto Autovalente", d="Adulto Dependiente", e="No aplica"),
+  p_8 = c(a="Menos de 2h", b="2-4h", c="4-6h", d="> 6h", e="No dedica tiempo"),
+  p_9 = c(a="< 30 min", b="30 min - 1h", c="1h - 1.5h", d="1.5h - 2h", e="> 2h"),
+  p_10 = c(a="Escritorio", b="Notebook", c="Tablet", d="Celular"),
+  p_11 = c(a="Sí, siempre", b="Mayor parte", c="Mitad tiempo", d="Ocasionalmente", e="Sin espacio"),
+  p_13 = c(a="Coincide totalmente", b="Parcialmente", c="No sabe", d="Sin claridad vocacional", e="Vocación distinta"),
+  p_14 = c(a="Interés personal", b="Ingresos futuros", c="Influencia terceros", d="Impacto social", e="Otro"),
+  p_17 = c(a="Compañeros/as", b="Profesores/as", c="Materiales online", d="Familia/Amigos", e="No sabría")
+)
+
+# Textos descriptivos para los títulos
+txt_p12 <- c(
+  a="Tomo apuntes organizados durante las clases",
+  b="Entrego trabajos escritos con tiempo",
+  c="Reviso la rúbrica o criterios antes de entregar",
+  d="Pregunto cuando no entiendo en clases",
+  e="Leo los textos antes de las clases",
+  f="Busco materiales extra (videos, guías, tutorías) para entender mejor un tema",
+  g="Divido tareas grandes en pasos pequeños",
+  h="Reviso cómo me fue después de una evaluación para aprender de ella",
+  i="Busco un lugar adecuado para estudiar sin tantas distracciones",
+  j="Pido ayuda a tiempo cuando siento que me estoy atrasando",
+  k="Uso una agenda o calendario para organizar mis semanas",
+  l="Identiﬁco qué cosas me cuesta más al aprender (memoria, lectura, concentración, etc.)",
+  m="Cuido mi sueño, alimentación y descanso para poder rendir mejor",
+  n="He hablado con alguien cuando algo personal afectó mis estudios"
+)
+
+txt_p15 <- c(
+  a="Adaptarme a los desafíos y exigencias de estudio universitario",
+  b="Leer artículos cientíﬁcos y universitarios/académicos",
+  c="Desarrollar trabajos escritos",
+  d="Analizar información numérica y estadística",
+  e="Buscar libros o documentos en la biblioteca (física y virtual)",
+  f="Exponer a otros sobre un tema relacionado al curso.",
+  g="Utilizar Inteligencia Artiﬁcial como recurso para el aprendizaje",
+  h="Leer artículos cientíﬁcos/universitarios en inglés"
+)
+
+txt_p16 <- c(
+  a="Confío en mis capacidades para tener un buen desempeño académico",
+  b="Me siento capaz de planiﬁcar eﬁcazmente mi tiempo para cumplir con mis responsabilidades académicas y personales",
+  c="Confío en mi capacidad para organizarme y cumplir con las exigencias",
+  d="Me siento capaz de mantener la constancia en relación con mis estudios universitarios",
+  e="Me siento capaz de participar activamente en trabajos y proyectos académicos grupales"
+)
+
+txt_p18 <- c(
+  a="Actividades académicas ligadas al área de estudio de mi carrera: ayudantías, proyectos de investigación, cursos extras, etc",
+  b="Actividades universitarias extracurriculares: selecciones deportivas, agrupaciones culturales, voluntariado, etc",
+  c="Actividades de representación estudiantil: delegado de curso, parte de un centro de estudiantes, etc",
+  d="Estudios de postgrado: magister, postítulos, diplomados, doctorados (una vez ﬁnalizada la carrera)"
+)
+
+# --- P19: etiquetas en setup (para que render_viz pueda usarlas si corresponde) ---
+lab_p19 <- c(
+  A = "1. Planificar y organizar el tiempo de estudio eficazmente.",
+  B = "2. Establecer vínculos colaborativos con pares.",
+  C = "3. Aplicar estrategias de estudio adecuadas al contenido.",
+  D = "4. Fortalecer la lectura comprensiva y escritura académica.",
+  E = "5. Interpretar y expresar resultados matemáticos.",
+  F = "6. Mantener la concentración durante el estudio y la clase.",
+  G = "7. Potenciar el autoconocimiento y desarrollo personal.",
+  H = "8. Trabajar de forma colaborativa y en equipo.",
+  I = "9. Gestionar emociones ante la presión y carga académica.",
+  J = "10. Utilizar dispositivos y herramientas tecnológicas para el estudio.",
+  K = "11. Comunicar ideas de forma oral con claridad y fluidez."
+)
+
+# --- FUNCIÓN DE RENDERIZADO UNIVERSAL ---
+render_viz <- function(data, var, title, type = "bar") {
+  # 1. Validación de seguridad
+  if (is.null(data) || nrow(data) == 0) return(NULL)
+  if (!var %in% names(data)) return(NULL)
+
+  # 2. Identificar si es variable de respuesta múltiple (P7, P17, P19)
+  is_multiple <- var %in% c("p_7", "p_17", "p_19")
+
+  if (is_multiple) {
+    # Transformar "a,c" en filas separadas
+    df_p <- data %>%
+      select(all_of(var)) %>%
+      rename(v_raw = all_of(var)) %>%
+      filter(!is.na(v_raw)) %>%
+      mutate(v_raw = as.character(v_raw)) %>%
+      mutate(v = str_extract_all(str_to_lower(v_raw), "[a-k]")) %>%
+      unnest(v)
+  } else {
+    # Procesamiento estándar para opción única
+    df_p <- data %>%
+      select(all_of(var)) %>%
+      rename(v = all_of(var)) %>%
+      mutate(v = str_squish(as.character(v))) %>%
+      filter(!is.na(v), v != "", v != "NA")
+  }
+
+  if (nrow(df_p) == 0) return(NULL)
+
+  # 3. Mapeo de Etiquetas (Diccionario)
+  if (var %in% names(dict_labels)) {
+    df_p <- df_p %>%
+      mutate(v = recode(str_to_lower(v), !!!dict_labels[[var]], .default = v))
+  } else if (var == "p_19") {
+    df_p <- df_p %>%
+      mutate(v = recode(str_to_upper(v), !!!lab_p19, .default = v))
+  }
+
+  # 4. Configuración de niveles Likert
+  likert_levels <- NULL
+  if (str_detect(var, "p_12")) likert_levels <- lev_p12
+  if (str_detect(var, "p_15")) { df_p$v <- fix_p15(df_p$v); likert_levels <- lev_p15_clean }
+  if (str_detect(var, "p_16")) likert_levels <- lev_p16
+  if (str_detect(var, "p_18")) likert_levels <- lev_p18
+
+  # 5. Cálculo de Frecuencias
+  summary <- df_p %>%
+    group_by(v) %>%
+    summarise(n = n(), .groups = "drop")
+
+  if (!is.null(likert_levels)) {
+    summary <- summary %>%
+      complete(v = factor(likert_levels, levels = likert_levels), fill = list(n = 0)) %>%
+      mutate(v = factor(v, levels = likert_levels))
+  } else {
+    summary <- summary %>% arrange(desc(n))
+  }
+
+  # 6. Porcentajes
+  denom <- if (is_multiple) n_est else sum(summary$n)
+  summary <- summary %>% mutate(pct = if (denom > 0) n / denom else 0)
+
+  # 7. Renderizado
+  if (type == "bar") {
+    y_order <- if (is.null(likert_levels)) reorder(summary$v, summary$pct) else summary$v
+
+    ggplot(summary, aes(x = pct, y = y_order)) +
+      geom_col(fill = brand_teal, width = 0.7) +
+      geom_text(
+        aes(label = ifelse(n > 0, percent(pct, accuracy = 0.1), "")),
+        hjust = -0.2, size = 8, fontface = "bold", color = brand_dark
+      ) +
+      scale_x_continuous(labels = percent, limits = c(0, max(summary$pct, 0.1) * 1.3)) +
+      labs(title = str_wrap(title, 60), x = NULL, y = NULL) +
+      theme_minimal(base_size = 30) +
+      theme(
+        plot.title = element_text(face="bold", color=brand_dark, size = 24, margin = margin(b=15)),
+        panel.grid.major.y = element_blank(),
+        axis.text.y = element_text(face="bold", color = "black", size = 20),
+        axis.text.x = element_text(face="bold", color = "black", size = 20)
+      )
+  } else {
+    ggplot(summary, aes(x = "", y = pct, fill = v)) +
+      geom_col(width = 1, color = "white") +
+      coord_polar("y") +
+      scale_fill_brewer(palette = "GnBu") +
+      geom_text(
+        aes(label = ifelse(pct > 0.04, percent(pct, accuracy = 1), "")),
+        position = position_stack(vjust = 0.5), size = 9, fontface = "bold"
+      ) +
+      labs(title = str_wrap(title, 40), fill = NULL) +
+      theme_void(base_size = 26) +
+      theme(
+        legend.position = "bottom",
+        plot.title = element_text(face="bold", color=brand_dark, hjust = 0.5)
+      )
+  }
+}
+```
+
+## Reporte General IHEA 2026 {canvas-title="true"}
+
+::: {.columns}
+::: {.column width="60%"}
+### Resumen Global
+* **Total Estudiantes:** `r format(n_est, big.mark = ",")` (Diurno Presencial)
+* **Carreras Analizadas:** `r n_carreras`
+* **Cobertura Institucional:** `r percent(cobertura_total$cobertura, accuracy = 0.1)` 
+* **Matrícula Total:** `r format(cobertura_total$n_matriculados, big.mark = ",")`
+* **Instrumento:** IHEA 2026
+:::
+
+::: {.column width="40%"}
+::: {.callout-note}
+## Alcance
+Este reporte presenta un análisis integrado de todas las carreras incluidas en la aplicación del instrumento IHEA 2026.
+:::
+:::
+:::
+
+## 1. Trayectoria y Experiencia Superior (P1 - P2)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_1", "¿Has realizado estudios superiores previos?")
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_2", "Evaluación de la experiencia previa", "pie")
+```
+:::
+:::
+
+## 2. Trabajo y Formalidad (P3 - P4)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_3", "¿Trabajas actualmente?")
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_4", "Nivel de formalidad laboral")
+```
+:::
+:::
+
+## 3. Planificación Laboral y Cuidados (P5 - P6)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_5", "Plan de trabajo 2026", "pie")
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_6", "¿Cuida personas?")
+```
+:::
+:::
+
+## 4. Perfil de Cuidados (P7 - P8)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_7", "Sujetos bajo cuidado")
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_8", "Tiempo diario de cuidado", "pie")
+```
+:::
+:::
+
+## 5. Logística y Conectividad (P9 - P10)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_9", "Tiempo de traslado a la UAH")
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_10", "Dispositivo principal de estudio")
+```
+:::
+:::
+
+## 6. Entorno de Estudio y Vocación (P11 - P13)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_11", "Espacio tranquilo para estudiar", "pie")
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_13", "Coincidencia vocacional")
+```
+:::
+:::
+
+## 7. Motivos de Elección (P14)
+
+```{r, echo=FALSE, fig.width=20, fig.height=12, fig.align='center'}
+render_viz(df, "p_14", "¿Por qué eligió esta carrera?")
+```
+
+## 8. Hábitos de Estudio (P12.a - P12.b)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_12_a", txt_p12["a"])
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_12_b", txt_p12["b"])
+```
+:::
+:::
+
+## 9. Hábitos de Estudio (P12.c - P12.d)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_12_c", txt_p12["c"])
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_12_d", txt_p12["d"])
+```
+:::
+:::
+
+## 10. Hábitos de Estudio (P12.e - P12.f)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_12_e", txt_p12["e"])
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_12_f", txt_p12["f"])
+```
+:::
+:::
+
+## 11. Hábitos de Estudio (P12.g - P12.h)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_12_g", txt_p12["g"])
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_12_h", txt_p12["h"])
+```
+:::
+:::
+
+## 12. Hábitos de Estudio (P12.i - P12.j)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_12_i", txt_p12["i"])
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_12_j", txt_p12["j"])
+```
+:::
+:::
+
+## 13. Hábitos de Estudio (P12.k - P12.l)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_12_k", txt_p12["k"])
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_12_l", txt_p12["l"])
+```
+:::
+:::
+
+## 14. Hábitos de Estudio (P12.m - P12.n)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_12_m", txt_p12["m"])
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_12_n", txt_p12["n"])
+```
+:::
+:::
+
+## 15. Preparación Percibida (P15.a - P15.b)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_15_a", txt_p15["a"])
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_15_b", txt_p15["b"])
+```
+:::
+:::
+
+## 16. Preparación Percibida (P15.c - P15.d)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_15_c", txt_p15["c"])
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_15_d", txt_p15["d"])
+```
+:::
+:::
+
+## 17. Preparación Percibida (P15.e - P15.f)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_15_e", txt_p15["e"])
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_15_f", txt_p15["f"])
+```
+:::
+:::
+
+## 18. Preparación Percibida (P15.g - P15.h)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_15_g", txt_p15["g"])
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_15_h", txt_p15["h"])
+```
+:::
+:::
+
+## 19. Autoeficacia (P16.a - P16.b)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_16_a", txt_p16["a"])
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_16_b", txt_p16["b"])
+```
+:::
+:::
+
+## 20. Autoeficacia (P16.c - P16.d)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_16_c", txt_p16["c"])
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_16_d", txt_p16["d"])
+```
+:::
+:::
+
+## 21. Autoeficacia y Apoyos (P16.e - P17)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_16_e", txt_p16["e"])
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_17", "Fuentes de apoyo esperadas")
+```
+:::
+:::
+
+## 22. Proyección Académica (P18.a - P18.b)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_18_a", txt_p18["a"])
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_18_b", txt_p18["b"])
+```
+:::
+:::
+
+## 23. Proyección Académica (P18.c - P18.d)
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_18_c", txt_p18["c"])
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+render_viz(df, "p_18_d", txt_p18["d"])
+```
+:::
+:::
+
+## 24. Preferencias de Formación (P19)
+
+```{r, echo=FALSE, fig.width=18, fig.height=10, fig.align='center'}
+df_p19 <- df %>%
+  filter(!is.na(p_19)) %>%
+  transmute(p_19 = as.character(p_19)) %>%
+  mutate(p_19 = str_remove_all(p_19, "\\[\\d+\\]")) %>%
+  mutate(p_19 = str_to_upper(p_19)) %>%
+  mutate(choices = str_extract_all(p_19, "[A-K]")) %>%
+  unnest(choices) %>%
+  filter(!is.na(choices), choices %in% names(lab_p19)) %>%
+  count(choices, name = "n") %>%
+  mutate(item = recode(choices, !!!lab_p19)) %>%
+  arrange(desc(n))
+
+ggplot(df_p19, aes(x = n, y = reorder(item, n))) +
+  geom_col(fill = brand_dark) +
+  geom_text(aes(label = n), hjust = -0.25, size = 7, fontface = "bold", color = brand_dark) +
+  scale_x_continuous(expand = expansion(mult = c(0, 0.12))) +
+  labs(
+    title = "Ranking de Necesidades Formativas (Global)",
+    x = "Menciones Totales",
+    y = NULL
+  ) +
+  theme_minimal(base_size = 25)
+```
+
+::: {.aside}
+Dirección de Docencia y Pedagogía | CEFAU UAH 2026.
+:::
