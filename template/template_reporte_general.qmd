@@ -1,7 +1,7 @@
 ---
 title: "IHEA 2026"
 subtitle: |
-  Reporte General de Intereses, Hábitos y Expectativas Académicas <br> **Todas las Carreras**
+  Reporte de Encuesta de Intereses, Hábitos y Expectativas Académicas <br> **Todas las Carreras**
 author: ""
 format:
   revealjs:
@@ -34,10 +34,12 @@ if (is.data.frame(dat)) {
   ihea_full <- dat
   # Cobertura viene desde archivo aparte
   cobertura_tbl <- readRDS(here("outputs", "cobertura_por_carrera.rds"))
+  tipo_admision_tbl <- readRDS(here("outputs", "cobertura_tipo_admision.rds"))
 } else if (is.list(dat) && ("ihea" %in% names(dat))) {
-  # Formato nuevo: lista con ihea + cobertura
+  # Formato nuevo: lista con ihea + cobertura + tipo_admision
   ihea_full <- dat$ihea
   cobertura_tbl <- dat$cobertura
+  tipo_admision_tbl <- if ("tipo_admision" %in% names(dat)) dat$tipo_admision else NULL
 } else {
   stop("data_reproduction.rds tiene un formato inesperado. Debe ser data.frame o lista con $ihea.")
 }
@@ -56,6 +58,15 @@ cobertura_total <- cobertura_tbl %>%
     n_respondieron = sum(n_respondieron, na.rm = TRUE)
   ) %>%
   mutate(cobertura = n_respondieron / n_matriculados)
+
+# Preparar datos de tipo de admisión para visualización
+if (!is.null(tipo_admision_tbl)) {
+  tipo_adm_viz <- tipo_admision_tbl %>%
+    filter(tipo_admision != "Sin información") %>%
+    arrange(desc(n_matriculados))
+} else {
+  tipo_adm_viz <- NULL
+}
 
 # --- NIVELES LIKERT (ORDEN LÓGICO SEGÚN DATASET) ---
 lev_p12 <- c("No me identifica nada", "Me identifica poco", "Me identifica medianamente", "Me identifica", "Me identifica mucho")
@@ -270,6 +281,67 @@ render_viz <- function(data, var, title, type = "bar") {
 ## Alcance
 Este reporte presenta un análisis integrado de todas las carreras incluidas en la aplicación del instrumento IHEA 2026.
 :::
+:::
+:::
+
+## Composición por Tipo de Admisión
+
+::: {.columns}
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+if (!is.null(tipo_adm_viz) && nrow(tipo_adm_viz) > 0) {
+  ggplot(tipo_adm_viz, aes(x = n_matriculados, y = reorder(tipo_admision, n_matriculados))) +
+    geom_col(fill = brand_teal, width = 0.7) +
+    geom_text(
+      aes(label = paste0(scales::comma(n_matriculados), "\n(", scales::percent(pct_matriculados, accuracy = 0.1), ")")),
+      hjust = -0.1, size = 8, fontface = "bold", color = brand_dark
+    ) +
+    scale_x_continuous(labels = scales::comma, expand = expansion(mult = c(0, 0.25))) +
+    labs(
+      title = "Matrícula por Tipo de Admisión",
+      x = "Número de Estudiantes",
+      y = NULL
+    ) +
+    theme_minimal(base_size = 30) +
+    theme(
+      plot.title = element_text(face="bold", color=brand_dark, size = 24, margin = margin(b=15)),
+      panel.grid.major.y = element_blank(),
+      axis.text.y = element_text(face="bold", color = "black", size = 20),
+      axis.text.x = element_text(face="bold", color = "black", size = 20)
+    )
+} else {
+  plot.new()
+  text(0.5, 0.5, "Datos no disponibles", cex = 2)
+}
+```
+:::
+::: {.column width="50%"}
+```{r, echo=FALSE, fig.width=14, fig.height=11}
+if (!is.null(tipo_adm_viz) && nrow(tipo_adm_viz) > 0) {
+  ggplot(tipo_adm_viz, aes(x = cobertura, y = reorder(tipo_admision, cobertura))) +
+    geom_col(fill = brand_dark, width = 0.7) +
+    geom_text(
+      aes(label = paste0(scales::percent(cobertura, accuracy = 0.1), "\n(", n_respondieron, "/", n_matriculados, ")")),
+      hjust = -0.1, size = 8, fontface = "bold", color = brand_dark
+    ) +
+    scale_x_continuous(labels = scales::percent, limits = c(0, max(tipo_adm_viz$cobertura, na.rm = TRUE) * 1.3)) +
+    labs(
+      title = "Cobertura por Tipo de Admisión",
+      x = "Tasa de Respuesta",
+      y = NULL
+    ) +
+    theme_minimal(base_size = 30) +
+    theme(
+      plot.title = element_text(face="bold", color=brand_dark, size = 24, margin = margin(b=15)),
+      panel.grid.major.y = element_blank(),
+      axis.text.y = element_text(face="bold", color = "black", size = 20),
+      axis.text.x = element_text(face="bold", color = "black", size = 20)
+    )
+} else {
+  plot.new()
+  text(0.5, 0.5, "Datos no disponibles", cex = 2)
+}
+```
 :::
 :::
 
