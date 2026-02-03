@@ -1,7 +1,7 @@
 ---
 title: "IHEA 2026"
 subtitle: |
-  Reporte de Encuesta de Intereses, Hábitos y Expectativas Académicas <br> **Todas las Carreras**
+  Reporte Encuesta de Intereses, Hábitos y Expectativas Académicas <br> **Todas las Carreras**
 author: ""
 format:
   revealjs:
@@ -273,6 +273,26 @@ render_viz <- function(data, var, title, type = "bar") {
 * **Carreras Analizadas:** `r n_carreras`
 * **Cobertura Institucional:** `r percent(cobertura_total$cobertura, accuracy = 0.1)` 
 * **Matrícula Total:** `r format(cobertura_total$n_matriculados, big.mark = ",")`
+
+```{r, echo=FALSE, results='asis'}
+if (!is.null(tipo_adm_viz) && nrow(tipo_adm_viz) > 0) {
+  # Filtrar solo Centralizada y Directa (excluir "Otra" y "Sin información")
+  tipo_principal <- tipo_adm_viz %>% 
+    filter(tipo_admision %in% c("Centralizada", "Directa"))
+  
+  if (nrow(tipo_principal) > 0) {
+    for (i in 1:nrow(tipo_principal)) {
+      cat(sprintf(
+        "  - *%s:* %s (%s)\n",
+        tipo_principal$tipo_admision[i],
+        format(tipo_principal$n_matriculados[i], big.mark = ","),
+        scales::percent(tipo_principal$pct_matriculados[i], accuracy = 0.1)
+      ))
+    }
+  }
+}
+```
+
 * **Instrumento:** IHEA 2026
 :::
 
