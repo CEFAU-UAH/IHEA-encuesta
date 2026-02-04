@@ -1,23 +1,21 @@
 # ==============================================================================
-# SCRIPT: 00_data_load.R (Versión Final - Con Tipo de Admisión)
+# SCRIPT: 00_data_load.R (Versión Actualizada - Lógica Binaria de Admisión)
 # Objetivo:
 #  (1) Cargar respuestas IHEA (DIURNO PRESENCIAL) y limpiar/estandarizar
 #  (2) Expandir matrices (P12, P15, P16, P18)
-#  (3) Cargar MATRÍCULAS (MATRÍCULAS AD DIRECTA Y CENTR) con tipo de admisión
+#  (3) Cargar MATRÍCULAS con nueva regla de negocio:
+#      - Centralizada -> "Centralizada"
+#      - Todo lo demás -> "Directa" (salvo NAs)
 #  (4) FILTRAR: Eliminar respuestas de estudiantes NO matriculados
-#  (5) Calcular cobertura por carrera: % respondieron / matriculados
-#  (6) Calcular estadísticas por tipo de admisión (Centralizada vs Directa)
-#  (7) Guardar:
-#       - data_reproduction.rds              (lista con ihea + cobertura + tipo_admision)
-#       - outputs/cobertura_por_carrera.rds  (tabla cobertura por carrera)
-#       - outputs/cobertura_tipo_admision.rds (estadísticas por tipo admisión)
-#       - outputs/matriculas_clean.rds       (matrículas limpias)
+#  (5) Calcular coberturas y estadísticas
+#  (6) Guardar outputs en formato lista y archivos individuales
 # ==============================================================================
 
 library(tidyverse)
 library(readxl)
 library(janitor)
 library(here)
+library(stringr)
 
 # ------------------------------------------------------------------------------
 # 0) Parámetros
@@ -27,12 +25,14 @@ sheet_respuestas <- "encuesta IHE"
 sheet_matriculas <- "MATRIC CENTRA Y DIRECTA"
 
 if (!file.exists(archivo_path)) {
-  stop("No existe el archivo Excel en: ", archivo_path)
+  stop("❌ ERROR CRÍTICO: No existe el archivo Excel en: ", archivo_path)
 }
 
 # ------------------------------------------------------------------------------
 # 1) Cargar Respuestas (todo como texto para evitar problemas con RUT)
 # ------------------------------------------------------------------------------
+message("🔄 Cargando hoja de respuestas IHEA...")
+
 ihea_raw <- read_excel(
   archivo_path,
   sheet = sheet_respuestas,
@@ -44,12 +44,14 @@ ihea_raw <- read_excel(
 # ------------------------------------------------------------------------------
 # 2) Procesamiento Respuestas
 # ------------------------------------------------------------------------------
+message("🔄 Procesando y limpiando respuestas...")
+
 ihea_final <- ihea_raw %>%
   rename(carrera_raw = any_of(c("carrera_s", "carrera", "nombre_carrera", "x_carrera"))) %>%
   filter(!is.na(rut)) %>%
   mutate(
     rut = as.character(rut),
-    rut = str_remove_all(rut, "rt|[\\.\\-\\s]"),
+    rut = str_remove_all(rut, "rt|[\\.\\-\\s]"), # Limpieza RUT
     rut = str_trim(rut),
 
     carrera_raw = as.character(carrera_raw),
@@ -77,8 +79,9 @@ ihea_final <- ihea_raw %>%
   )
 
 # ------------------------------------------------------------------------------
-# 3) Cargar Matrículas con Tipo de Admisión
+# 3) Cargar Matrículas con Regla de Negocio Actualizada
 # ------------------------------------------------------------------------------
+message("🔄 Cargando matrículas y aplicando reglas de negocio...")
 
 matriculas_raw0 <- read_excel(
   archivo_path,
@@ -88,62 +91,61 @@ matriculas_raw0 <- read_excel(
 ) %>%
   janitor::clean_names()
 
-# Buscar la fila donde aparece "RUT"
-header_row <- which(apply(matriculas_raw0, 1, function(r) any(stringr::str_to_upper(r) == "RUT", na.rm = TRUE)))[1]
+# Buscar dinámicamente la fila donde aparece "RUT" (cabecera real)
+header_row <- which(apply(matriculas_raw0, 1, function(r) any(str_to_upper(r) == "RUT", na.rm = TRUE)))[1]
 
 if (is.na(header_row)) {
-  stop("No encontré ninguna fila con 'RUT' en la hoja de matrículas.")
+  stop("❌ ERROR: No encontré ninguna fila con 'RUT' en la hoja de matrículas.")
 }
 
-# Extraer nombres de columnas
+# Extraer nombres de columnas correctos
 new_names <- matriculas_raw0 %>%
   slice(header_row) %>%
   unlist(use.names = FALSE) %>%
   as.character() %>%
-  stringr::str_squish()
+  str_squish()
 
-# Armar tabla real
+# Armar tabla con cabeceras correctas
 matriculas_raw <- matriculas_raw0 %>%
   slice((header_row + 1):n()) %>%
   setNames(new_names) %>%
   janitor::clean_names()
 
-# Verificación
-if (!"rut" %in% names(matriculas_raw)) {
-  stop("Después de detectar header, igual no existe columna 'rut'.")
-}
-
 # Detectar columna de carrera
 if (!"carrera" %in% names(matriculas_raw)) {
-  car_candidates <- names(matriculas_raw)[stringr::str_detect(names(matriculas_raw), "carrera|programa|plan|nombre")]
-  if (length(car_candidates) == 0) stop("No encontré columna de carrera en matrículas.")
+  car_candidates <- names(matriculas_raw)[str_detect(names(matriculas_raw), "carrera|programa|plan|nombre")]
+  if (length(car_candidates) == 0) stop("❌ ERROR: No encontré columna de carrera en matrículas.")
   matriculas_raw <- matriculas_raw %>% dplyr::rename(carrera = all_of(car_candidates[1]))
 }
 
 # Detectar columna de tipo de admisión
 if (!"tipo_admision" %in% names(matriculas_raw)) {
-  tipo_candidates <- names(matriculas_raw)[stringr::str_detect(names(matriculas_raw), "tipo.*admis|admis.*tipo|via.*ingreso")]
+  tipo_candidates <- names(matriculas_raw)[str_detect(names(matriculas_raw), "tipo.*admis|admis.*tipo|via.*ingreso")]
   if (length(tipo_candidates) > 0) {
     matriculas_raw <- matriculas_raw %>% dplyr::rename(tipo_admision = all_of(tipo_candidates[1]))
   }
 }
 
-# Limpieza final incluyendo tipo de admisión
+# Limpieza final y CLASIFICACIÓN BINARIA (Centralizada vs Directa)
 matriculas_clean <- matriculas_raw %>%
   filter(!is.na(rut)) %>%
   mutate(
     rut = as.character(rut),
-    rut = stringr::str_remove_all(rut, "rt|[\\.\\-\\s]"),
-    rut = stringr::str_trim(rut),
-    carrera = stringr::str_trim(stringr::str_to_title(as.character(carrera))),
+    rut = str_remove_all(rut, "rt|[\\.\\-\\s]"),
+    rut = str_trim(rut),
+    carrera = str_trim(str_to_title(as.character(carrera))),
     
-    # Procesar tipo de admisión (clasificar en Centralizada vs Directa)
+    # --- REGLA DE NEGOCIO ACTUALIZADA ---
     tipo_admision_raw = if ("tipo_admision" %in% names(.)) as.character(tipo_admision) else NA_character_,
+    
     tipo_admision = case_when(
       is.na(tipo_admision_raw) ~ "Sin información",
-      stringr::str_detect(stringr::str_to_upper(tipo_admision_raw), "CENTRALIZADA") ~ "Centralizada",
-      stringr::str_detect(stringr::str_to_upper(tipo_admision_raw), "DIRECTA|ESPECIAL|CONDUCENCIA|HABILITACION|COMPLEMENTARIA") ~ "Directa",
-      TRUE ~ "Otra"
+      
+      # Si contiene "CENTRALIZADA" (case insensitive) -> Centralizada
+      str_detect(str_to_upper(tipo_admision_raw), "CENTRALIZADA") ~ "Centralizada",
+      
+      # CUALQUIER OTRA COSA -> Directa (absorbe especiales, complementarias, otras, etc.)
+      TRUE ~ "Directa"
     )
   ) %>%
   filter(rut != "", !is.na(carrera), carrera != "") %>%
@@ -152,6 +154,7 @@ matriculas_clean <- matriculas_raw %>%
 # ------------------------------------------------------------------------------
 # 4) FILTRAR: Eliminar respuestas de estudiantes NO matriculados
 # ------------------------------------------------------------------------------
+message("🧹 Filtrando respuestas según base de matrícula...")
 
 ruts_validos <- matriculas_clean %>%
   distinct(rut, carrera)
@@ -161,23 +164,21 @@ ihea_final <- ihea_final %>%
   semi_join(ruts_validos, by = c("rut", "carrera"))
 n_despues <- nrow(ihea_final)
 
-cat("\n--- FILTRADO DE RESPUESTAS ---")
+cat("\n--- RESULTADO FILTRO ---")
 cat("\n✅ Respuestas totales (antes):", n_antes)
 cat("\n✅ Respuestas de matriculados (después):", n_despues)
-cat("\n❌ Respuestas eliminadas (NO matriculados):", n_antes - n_despues, "\n")
+cat("\n❌ Eliminadas (NO matriculados):", n_antes - n_despues, "\n")
 
 # ------------------------------------------------------------------------------
-# 5) Cobertura por carrera
+# 5) Generar Tablas de Cobertura
 # ------------------------------------------------------------------------------
 
 resp_unique <- ihea_final %>% distinct(rut, carrera)
 mat_unique <- matriculas_clean %>% distinct(rut, carrera)
 
-resp_por_carrera <- resp_unique %>%
-  count(carrera, name = "n_respondieron")
-
-mat_por_carrera <- mat_unique %>%
-  count(carrera, name = "n_matriculados")
+# Por Carrera
+resp_por_carrera <- resp_unique %>% count(carrera, name = "n_respondieron")
+mat_por_carrera <- mat_unique %>% count(carrera, name = "n_matriculados")
 
 cobertura_por_carrera <- mat_por_carrera %>%
   left_join(resp_por_carrera, by = "carrera") %>%
@@ -188,7 +189,7 @@ cobertura_por_carrera <- mat_por_carrera %>%
   arrange(desc(cobertura), desc(n_respondieron))
 
 # ------------------------------------------------------------------------------
-# 6) Estadísticas por Tipo de Admisión
+# 6) Estadísticas por Tipo de Admisión (Lógica Actualizada)
 # ------------------------------------------------------------------------------
 
 # Enriquecer respuestas con tipo de admisión
@@ -229,10 +230,11 @@ cobertura_carrera_tipo <- matriculas_clean %>%
   arrange(carrera, desc(n_matriculados))
 
 # ------------------------------------------------------------------------------
-# 7) Guardados (FORMATO LISTA para compatibilidad con templates)
+# 7) Guardado de Outputs
 # ------------------------------------------------------------------------------
+message("💾 Guardando archivos...")
 
-# Guardar en formato lista (nuevo formato recomendado)
+# Formato lista para RMarkdown/Quarto
 data_completa <- list(
   ihea = ihea_final,
   cobertura = cobertura_por_carrera,
@@ -242,7 +244,7 @@ data_completa <- list(
 
 saveRDS(data_completa, here("data_reproduction.rds"))
 
-# Guardar outputs auxiliares
+# Archivos individuales en carpeta outputs
 out_dir <- here("outputs")
 if (!dir.exists(out_dir)) dir.create(out_dir, recursive = TRUE)
 
@@ -252,42 +254,21 @@ saveRDS(cobertura_carrera_tipo, here("outputs", "cobertura_carrera_tipo.rds"))
 saveRDS(matriculas_clean, here("outputs", "matriculas_clean.rds"))
 
 # ------------------------------------------------------------------------------
-# 8) Diagnóstico
+# 8) Diagnóstico Final en Consola
 # ------------------------------------------------------------------------------
-cat("\n--- REPORTE DE CALIDAD (RESPUESTAS - SOLO MATRICULADOS) ---")
-cat("\n✅ Registros totales (respuestas válidas):", nrow(ihea_final))
-cat("\n🎓 Carreras detectadas (respuestas):", n_distinct(ihea_final$carrera), "\n")
-print(sort(table(ihea_final$carrera), decreasing = TRUE))
+cat("\n" , paste(rep("=", 50), collapse = ""))
+cat("\n📊 REPORTE FINAL DE CARGA")
+cat("\n" , paste(rep("=", 50), collapse = ""))
 
-cat("\n--- REPORTE DE CALIDAD (MATRÍCULAS) ---")
-cat("\n✅ Registros totales (matrículas):", nrow(matriculas_clean))
-cat("\n🎓 Carreras detectadas (matrículas):", n_distinct(matriculas_clean$carrera), "\n")
-print(sort(table(matriculas_clean$carrera), decreasing = TRUE))
-
-cat("\n--- COBERTURA POR TIPO DE ADMISIÓN ---\n")
+cat("\n\n--- DISTRIBUCIÓN POR TIPO DE ADMISIÓN (Nueva Lógica) ---\n")
 print(
   cobertura_tipo_admision %>%
     mutate(
       cobertura_pct = scales::percent(cobertura, accuracy = 0.1),
-      pct_mat = scales::percent(pct_matriculados, accuracy = 0.1),
-      pct_resp = scales::percent(pct_respondieron, accuracy = 0.1)
+      pct_mat = scales::percent(pct_matriculados, accuracy = 0.1)
     ) %>%
-    select(tipo_admision, n_matriculados, pct_mat, n_respondieron, pct_resp, cobertura_pct)
+    select(tipo_admision, n_matriculados, pct_mat, n_respondieron, cobertura_pct)
 )
 
-cat("\n--- COBERTURA (TOP 15 por % cobertura) ---\n")
-print(
-  cobertura_por_carrera %>%
-    mutate(cobertura_pct = scales::percent(cobertura, accuracy = 0.1)) %>%
-    select(carrera, n_matriculados, n_respondieron, cobertura_pct) %>%
-    slice_head(n = 15)
-)
-
-cat("\n--- ARCHIVOS GENERADOS ---")
-cat("\n📦 data_reproduction.rds (lista con ihea + cobertura + tipo_admision)")
-cat("\n📦 outputs/cobertura_por_carrera.rds")
-cat("\n📦 outputs/cobertura_tipo_admision.rds")
-cat("\n📦 outputs/cobertura_carrera_tipo.rds")
-cat("\n📦 outputs/matriculas_clean.rds\n")
-
-glimpse(ihea_final)
+cat("\n\n✅ Proceso finalizado correctamente.")
+cat("\n📁 Archivo principal: data_reproduction.rds creado/actualizado.\n")
