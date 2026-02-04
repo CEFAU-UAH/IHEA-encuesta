@@ -135,16 +135,18 @@ matriculas_clean <- matriculas_raw %>%
     rut = str_trim(rut),
     carrera = str_trim(str_to_title(as.character(carrera))),
     
-    # --- REGLA DE NEGOCIO ACTUALIZADA ---
+    # --- REGLA DE NEGOCIO ACTUALIZADA (BLINDADA) ---
+    # Paso 1: Obtener el valor crudo, asegurando que existe la columna
     tipo_admision_raw = if ("tipo_admision" %in% names(.)) as.character(tipo_admision) else NA_character_,
     
+    # Paso 2: Clasificación estricta
     tipo_admision = case_when(
       is.na(tipo_admision_raw) ~ "Sin información",
       
-      # Si contiene "CENTRALIZADA" (case insensitive) -> Centralizada
+      # Si contiene "CENTRALIZADA" -> Centralizada
       str_detect(str_to_upper(tipo_admision_raw), "CENTRALIZADA") ~ "Centralizada",
       
-      # CUALQUIER OTRA COSA -> Directa (absorbe especiales, complementarias, otras, etc.)
+      # IMPORTANTE: Todo lo demás (incluyendo "Otra", "Especial", etc.) se fuerza a "Directa"
       TRUE ~ "Directa"
     )
   ) %>%
@@ -270,5 +272,12 @@ print(
     select(tipo_admision, n_matriculados, pct_mat, n_respondieron, cobertura_pct)
 )
 
-cat("\n\n✅ Proceso finalizado correctamente.")
+# VALIDACIÓN DE SEGURIDAD
+if ("Otra" %in% cobertura_tipo_admision$tipo_admision) {
+  warning("⚠️  ALERTA: La categoría 'Otra' todavía existe. Revisa la lógica de case_when.")
+} else {
+  cat("\n✅ Confirmado: La categoría 'Otra' ha sido absorbida por 'Directa' correctamente.")
+}
+
+cat("\n\n✅ Proceso finalizado. Ahora puedes ejecutar tu reporte.")
 cat("\n📁 Archivo principal: data_reproduction.rds creado/actualizado.\n")
