@@ -1,12 +1,12 @@
 # ==============================================================================
-# SCRIPT: 00_data_load.R (Versión Actualizada - Lógica Binaria de Admisión)
+# SCRIPT: 00_data_load.R (Versión Actualizada - Lógica Binaria & Match por RUT)
 # Objetivo:
 #  (1) Cargar respuestas IHEA (DIURNO PRESENCIAL) y limpiar/estandarizar
 #  (2) Expandir matrices (P12, P15, P16, P18)
 #  (3) Cargar MATRÍCULAS con nueva regla de negocio:
 #      - Centralizada -> "Centralizada"
 #      - Todo lo demás -> "Directa" (salvo NAs)
-#  (4) FILTRAR: Eliminar respuestas de estudiantes NO matriculados
+#  (4) FILTRAR: Eliminar respuestas de NO matriculados (Cruce seguro por RUT)
 #  (5) Calcular coberturas y estadísticas
 #  (6) Guardar outputs en formato lista y archivos individuales
 # ==============================================================================
@@ -154,22 +154,31 @@ matriculas_clean <- matriculas_raw %>%
   select(rut, carrera, tipo_admision)
 
 # ------------------------------------------------------------------------------
-# 4) FILTRAR: Eliminar respuestas de estudiantes NO matriculados
+# 4) FILTRAR: Eliminar respuestas de estudiantes NO matriculados (FIXED)
 # ------------------------------------------------------------------------------
-message("🧹 Filtrando respuestas según base de matrícula...")
+message("🧹 Filtrando respuestas según base de matrícula (Validación segura por RUT)...")
 
+# 1. Extraemos RUT y la Carrera Oficial del maestro 
 ruts_validos <- matriculas_clean %>%
-  distinct(rut, carrera)
+  distinct(rut, carrera_oficial = carrera) %>%
+  group_by(rut) %>%
+  slice(1) %>%
+  ungroup()
 
 n_antes <- nrow(ihea_final)
+
+# 2. Filtramos y estandarizamos en un solo movimiento
 ihea_final <- ihea_final %>%
-  semi_join(ruts_validos, by = c("rut", "carrera"))
+  inner_join(ruts_validos, by = "rut") %>% 
+  select(-carrera) %>%
+  rename(carrera = carrera_oficial)
+
 n_despues <- nrow(ihea_final)
 
 cat("\n--- RESULTADO FILTRO ---")
 cat("\n✅ Respuestas totales (antes):", n_antes)
 cat("\n✅ Respuestas de matriculados (después):", n_despues)
-cat("\n❌ Eliminadas (NO matriculados):", n_antes - n_despues, "\n")
+cat("\n❌ Eliminadas (NO matriculados o RUTs inválidos):", n_antes - n_despues, "\n")
 
 # ------------------------------------------------------------------------------
 # 5) Generar Tablas de Cobertura
@@ -262,7 +271,7 @@ cat("\n" , paste(rep("=", 50), collapse = ""))
 cat("\n📊 REPORTE FINAL DE CARGA")
 cat("\n" , paste(rep("=", 50), collapse = ""))
 
-cat("\n\n--- DISTRIBUCIÓN POR TIPO DE ADMISIÓN (Nueva Lógica) ---\n")
+cat("\n\n--- DISTRIBUCIÓN POR TIPO DE ADMISIÓN ---\n")
 print(
   cobertura_tipo_admision %>%
     mutate(
@@ -276,8 +285,19 @@ print(
 if ("Otra" %in% cobertura_tipo_admision$tipo_admision) {
   warning("⚠️  ALERTA: La categoría 'Otra' todavía existe. Revisa la lógica de case_when.")
 } else {
-  cat("\n✅ Confirmado: La categoría 'Otra' ha sido absorbida por 'Directa' correctamente.")
+  cat("\n✅ Confirmado: La categoría 'Otra' ha sido absorbida por 'Directa' correctamente.\n")
 }
 
-cat("\n\n✅ Proceso finalizado. Ahora puedes ejecutar tu reporte.")
+# --- NUEVO: VALIDACIÓN DE CARRERAS DE MONITOREO ---
+cat("\n--- ESTADO DE CARRERAS CRÍTICAS (Geografía e Ingenierías) ---\n")
+print(
+  cobertura_por_carrera %>%
+    filter(str_detect(
+      stringi::stri_trans_general(str_to_lower(carrera), "Latin-ASCII"), 
+      "geograf|financiera|analitica"
+    )) %>%
+    select(carrera, n_matriculados, n_respondieron, cobertura)
+)
+
+cat("\n✅ Proceso finalizado. Ahora puedes ejecutar tu reporte.")
 cat("\n📁 Archivo principal: data_reproduction.rds creado/actualizado.\n")
